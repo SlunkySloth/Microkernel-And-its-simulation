@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microkernel Simulation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Dark Gray */
+            color: #e5e7eb; /* Light Gray */
+        }
+        .process-log-entry {
+            transition: all 0.3s ease;
+            transform-origin: top;
+        }
+        .log-enter {
+            transform: scaleY(0);
+            opacity: 0;
+        }
+        .log-enter-active {
+            transform: scaleY(1);
+            opacity: 1;
+        }
+        .highlight-active {
+            animation: pulse 0.7s ease-in-out;
+        }
+        @keyframes pulse {
+            0%, 100% { background-color: #374151; }
+            50% { background-color: #4f46e5; }
+        }
+        .message-queue-item {
+            transition: all 0.5s ease;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-6 lg:p-8">
+    <div class="max-w-7xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-white">Microkernel OS Simulation</h1>
+            <p class="text-lg text-gray-400 mt-2">Observing Inter-Process Communication (IPC) and Scheduling</p>
+        </header>
+
+        <div class="text-center mb-6">
+            <button id="start-simulation" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-transform transform hover:scale-105">Start Simulation</button>
+            <span id="simulation-status" class="ml-4 text-gray-400 font-medium">Status: Idle</span>
+        </div>
+
+        <!-- Main Grid Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Kernel and Scheduler Column -->
+            <div class="lg:col-span-1 flex flex-col gap-6">
+                <!-- Kernel Info -->
+                <div class="bg-gray-800 rounded-xl shadow-2xl p-6">
+                    <h2 class="text-2xl font-semibold text-white mb-4 border-b border-gray-600 pb-2">Kernel Space</h2>
+                    <div id="kernel-state" class="text-lg font-mono text-cyan-400">State: RUNNING</div>
+                    <div class="mt-4">
+                        <h3 class="text-xl font-semibold text-white mb-3">IPC Message Queue</h3>
+                        <div id="message-queue" class="bg-gray-900 rounded-lg p-3 min-h-[100px] text-sm font-mono flex flex-col gap-2 overflow-y-auto max-h-60">
+                            <!-- Messages will appear here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scheduler Info -->
+                <div class="bg-gray-800 rounded-xl shadow-2xl p-6">
+                    <h2 class="text-2xl font-semibold text-white mb-4 border-b border-gray-600 pb-2">Scheduler</h2>
+                    <p class="text-gray-400 mb-4">Using a simple Round-Robin algorithm.</p>
+                    <div>
+                        <span class="font-semibold text-white">Current Tick:</span>
+                        <span id="tick-counter" class="font-mono text-lg text-green-400 ml-2">0</span>
+                    </div>
+                    <div>
+                        <span class="font-semibold text-white">Currently Running:</span>
+                        <span id="current-process" class="font-mono text-lg text-yellow-400 ml-2">None</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Space Processes Column -->
+            <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- User Application Process -->
+                <div id="proc-app_process" class="bg-gray-800 rounded-xl shadow-2xl p-6 flex flex-col">
+                    <h3 class="text-xl font-semibold text-white">User Application</h3>
+                    <p class="text-sm text-gray-400 mb-4 font-mono">[PID: app_process]</p>
+                    <div class="mb-4">
+                        <span class="font-medium text-white">Status:</span>
+                        <span id="status-app_process" class="ml-2 font-mono text-gray-300">Idle</span>
+                    </div>
+                    <div class="flex-grow">
+                        <h4 class="font-semibold text-white mb-2">Controls:</h4>
+                        <div class="flex flex-col gap-3">
+                            <div class="flex gap-2">
+                                <input type="text" id="filename-input" value="user_profile.txt" class="flex-grow bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <button id="read-file-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition">Read File</button>
+                            </div>
+                             <div class="flex gap-2">
+                                <input type="text" id="key-input" value="A" maxlength="1" class="w-16 text-center bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <button id="send-key-btn" class="flex-grow bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition">Send Keystroke</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-4 border-t border-gray-600 pt-4">
+                        <h4 class="font-semibold text-white mb-2">Process Log:</h4>
+                        <div id="log-app_process" class="h-40 bg-gray-900 rounded-lg p-2 overflow-y-auto text-xs font-mono"></div>
+                    </div>
+                </div>
+
+                <!-- File System Server -->
+                <div id="proc-fs_server" class="bg-gray-800 rounded-xl shadow-2xl p-6 flex flex-col">
+                    <h3 class="text-xl font-semibold text-white">File System Server</h3>
+                    <p class="text-sm text-gray-400 mb-4 font-mono">[PID: fs_server]</p>
+                    <div class="mb-4">
+                        <span class="font-medium text-white">Status:</span>
+                        <span id="status-fs_server" class="ml-2 font-mono text-gray-300">Idle</span>
+                    </div>
+                    <div class="flex-grow">
+                        <h4 class="font-semibold text-white mb-2">Virtual File System:</h4>
+                        <div id="virtual-fs" class="bg-gray-900 p-2 rounded-lg text-xs font-mono">
+                           <!-- VFS content here -->
+                        </div>
+                    </div>
+                    <div class="mt-4 border-t border-gray-600 pt-4">
+                        <h4 class="font-semibold text-white mb-2">Process Log:</h4>
+                        <div id="log-fs_server" class="h-40 bg-gray-900 rounded-lg p-2 overflow-y-auto text-xs font-mono"></div>
+                    </div>
+                </div>
+
+                <!-- Keyboard Driver Server -->
+                <div id="proc-keyboard_driver" class="bg-gray-800 rounded-xl shadow-2xl p-6 flex flex-col">
+                    <h3 class="text-xl font-semibold text-white">Keyboard Driver</h3>
+                    <p class="text-sm text-gray-400 mb-4 font-mono">[PID: keyboard_driver]</p>
+                    <div class="mb-4">
+                        <span class="font-medium text-white">Status:</span>
+                        <span id="status-keyboard_driver" class="ml-2 font-mono text-gray-300">Idle</span>
+                    </div>
+                     <div class="flex-grow">
+                        <h4 class="font-semibold text-white mb-2">Device State:</h4>
+                        <div class="bg-gray-900 p-2 rounded-lg text-xs font-mono">
+                           Last key pressed: <span id="last-key">None</span>
+                        </div>
+                    </div>
+                    <div class="mt-4 border-t border-gray-600 pt-4">
+                        <h4 class="font-semibold text-white mb-2">Process Log:</h4>
+                        <div id="log-keyboard_driver" class="h-40 bg-gray-900 rounded-lg p-2 overflow-y-auto text-xs font-mono"></div>
+                    </div>
+                </div>
+
+                <!-- Logger Server -->
+                 <div id="proc-logger_service" class="bg-gray-800 rounded-xl shadow-2xl p-6 flex flex-col">
+                    <h3 class="text-xl font-semibold text-white">Logger Service</h3>
+                    <p class="text-sm text-gray-400 mb-4 font-mono">[PID: logger_service]</p>
+                    <div class="mb-4">
+                        <span class="font-medium text-white">Status:</span>
+                        <span id="status-logger_service" class="ml-2 font-mono text-gray-300">Idle</span>
+                    </div>
+                     <div class="flex-grow">
+                        <h4 class="font-semibold text-white mb-2">Function:</h4>
+                        <p class="text-gray-400 text-sm">Receives messages from any process and logs them centrally.</p>
+                    </div>
+                    <div class="mt-4 border-t border-gray-600 pt-4">
+                        <h4 class="font-semibold text-white mb-2">Process Log:</h4>
+                        <div id="log-logger_service" class="h-40 bg-gray-900 rounded-lg p-2 overflow-y-auto text-xs font-mono"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    // --- DOM ELEMENTS ---
+    const getEl = (id) => document.getElementById(id);
+    const startBtn = getEl('start-simulation');
+    const statusSpan = getEl('simulation-status');
+    const tickCounter = getEl('tick-counter');
+    const currentProcessEl = getEl('current-process');
+    const messageQueueEl = getEl('message-queue');
+    const readFileBtn = getEl('read-file-btn');
+    const sendKeyBtn = getEl('send-key-btn');
+    const filenameInput = getEl('filename-input');
+    const keyInput = getEl('key-input');
+    const virtualFsEl = getEl('virtual-fs');
+
+    // --- SIMULATION CONSTANTS ---
+    const SIMULATION_SPEED = 300; // ms per tick
+
+    // --- GLOBAL STATE ---
+    let simulationInterval = null;
+    let kernel = null;
+
+    // --- UI HELPER FUNCTIONS ---
+    const updateStatus = (pid, status) => {
+        const el = getEl(`status-${pid}`);
+        if (el) {
+            el.textContent = status;
+            el.className = 'ml-2 font-mono ';
+            switch(status) {
+                case 'Running': el.classList.add('text-green-400'); break;
+                case 'Waiting': el.classList.add('text-yellow-400'); break;
+                case 'Idle': el.classList.add('text-gray-300'); break;
+            }
+        }
+    };
+
+    const addLog = (pid, message) => {
+        const logEl = getEl(`log-${pid}`);
+        if (logEl) {
+            const entry = document.createElement('div');
+            entry.className = 'text-gray-400 process-log-entry log-enter';
+            entry.innerHTML = `<span class="text-cyan-500">[T:${kernel.tick}]</span> ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+            // Trigger animation
+            requestAnimationFrame(() => {
+                entry.classList.add('log-enter-active');
+            });
+        }
+    };
+
+    const updateMessageQueueUI = () => {
+        messageQueueEl.innerHTML = '';
+        if (kernel.messageQueue.length === 0) {
+            messageQueueEl.innerHTML = '<span class="text-gray-500">Queue is empty...</span>';
+        }
+        kernel.messageQueue.forEach(msg => {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'bg-gray-700 p-2 rounded-md message-queue-item';
+            msgDiv.innerHTML = `
+                <div><span class="font-bold text-indigo-400">TO:</span> ${msg.to}</div>
+                <div><span class="font-bold text-green-400">FROM:</span> ${msg.from}</div>
+                <div class="text-xs text-gray-400 truncate">MSG: ${JSON.stringify(msg.payload)}</div>
+            `;
+            messageQueueEl.appendChild(msgDiv);
+        });
+    };
+    
+    const highlightActiveProcess = (pid) => {
+        document.querySelectorAll('[id^="proc-"]').forEach(el => el.classList.remove('highlight-active', 'border-2', 'border-indigo-500'));
+        const procEl = getEl(`proc-${pid}`);
+        if(procEl) {
+            procEl.classList.add('highlight-active', 'border-2', 'border-indigo-500');
+        }
+    }
+
+
+    // --- KERNEL AND PROCESS CLASSES ---
+
+    /**
+     * Microkernel: Manages processes, IPC, and scheduling.
+     * The core of the OS, but with minimal functionality.
+     */
+    class Microkernel {
+        constructor() {
+            this.processes = {};
+            this.messageQueue = [];
+            this.scheduler = new RoundRobinScheduler();
+            this.tick = 0;
+            this.isRunning = false;
+        }
+
+        registerProcess(process) {
+            this.processes[process.pid] = process;
+            this.scheduler.addProcess(process.pid);
+            process.setKernel(this);
+            console.log(`Kernel: Registered process ${process.pid}`);
+        }
+
+        // The main Inter-Process Communication (IPC) mechanism
+        ipc_send(from, to, payload) {
+            if (!this.processes[to]) {
+                console.error(`Kernel: IPC failed. Process ${to} not found.`);
+                return;
+            }
+            const message = { from, to, payload };
+            this.messageQueue.push(message);
+            updateMessageQueueUI();
+            addLog(this.processes[from].pid, `Sent message to ${to}`);
+        }
+
+        _dispatchMessages() {
+            const undeliveredMessages = [];
+            while (this.messageQueue.length > 0) {
+                const message = this.messageQueue.shift();
+                const receiver = this.processes[message.to];
+                if (receiver) {
+                    receiver.receiveMessage(message);
+                } else {
+                    undeliveredMessages.push(message);
+                }
+            }
+            this.messageQueue = undeliveredMessages;
+            updateMessageQueueUI();
+        }
+
+        simulationLoop() {
+            if (!this.isRunning) return;
+            
+            this.tick++;
+            tickCounter.textContent = this.tick;
+
+            // 1. Dispatch any pending messages from previous tick
+            this._dispatchMessages();
+
+            // 2. Scheduler selects the next process to run
+            const currentPid = this.scheduler.getNextProcess();
+            const currentProcess = this.processes[currentPid];
+            currentProcessEl.textContent = currentPid;
+            highlightActiveProcess(currentPid);
+
+            // 3. Update all process statuses
+            Object.values(this.processes).forEach(p => {
+                if (p.pid !== currentPid && p.status !== 'Waiting') {
+                     updateStatus(p.pid, 'Idle');
+                }
+            });
+            
+            // 4. Run one "tick" of the current process's logic
+            if (currentProcess.status !== 'Waiting') {
+                 updateStatus(currentProcess.pid, 'Running');
+                 currentProcess.run();
+            }
+        }
+    }
+
+    /**
+     * Scheduler: Decides which process runs next.
+     */
+    class RoundRobinScheduler {
+        constructor() {
+            this.queue = [];
+            this.currentIndex = -1;
+        }
+
+        addProcess(pid) {
+            this.queue.push(pid);
+        }
+
+        getNextProcess() {
+            if (this.queue.length === 0) return null;
+            this.currentIndex = (this.currentIndex + 1) % this.queue.length;
+            return this.queue[this.currentIndex];
+        }
+    }
+
+    /**
+     * Process: Base class for all user-space processes/servers.
+     */
+    class Process {
+        constructor(pid) {
+            this.pid = pid;
+            this.kernel = null;
+            this.mailbox = [];
+            this.status = 'Idle'; // Idle, Running, Waiting
+        }
+
+        setKernel(kernel) {
+            this.kernel = kernel;
+        }
+
+        receiveMessage(message) {
+            this.mailbox.push(message);
+            addLog(this.pid, `Received message from ${message.from}`);
+            if (this.status === 'Waiting') {
+                updateStatus(this.pid, 'Idle');
+                this.status = 'Idle';
+            }
+        }
+
+        run() {
+            // Overridden by subclasses
+        }
+    }
+    
+    // --- SPECIFIC PROCESS IMPLEMENTATIONS ---
+
+    class AppProcess extends Process {
+        constructor(pid) {
+            super(pid);
+            this.actionQueue = []; // User-initiated actions
+        }
+
+        requestReadFile(filename) {
+            this.actionQueue.push({ type: 'READ_FILE', filename });
+        }
+        
+        requestSendKey(key) {
+            this.actionQueue.push({ type: 'SEND_KEY', key });
+        }
+
+        run() {
+            // Process incoming messages first
+            if (this.mailbox.length > 0) {
+                const message = this.mailbox.shift();
+                if(message.payload.type === 'FILE_CONTENT') {
+                     addLog(this.pid, `FS replied with content for '${message.payload.filename}': "${message.payload.content}"`);
+                } else if(message.payload.type === 'KEY_ACK') {
+                    addLog(this.pid, `Driver ACK'd key: '${message.payload.key}'`);
+                }
+            } 
+            // Process user actions next
+            else if (this.actionQueue.length > 0) {
+                const action = this.actionQueue.shift();
+                if(action.type === 'READ_FILE') {
+                    addLog(this.pid, `Requesting to read '${action.filename}' from FS Server.`);
+                    this.kernel.ipc_send(this.pid, 'fs_server', { type: 'READ', filename: action.filename });
+                    this.status = 'Waiting';
+                    updateStatus(this.pid, 'Waiting');
+                } else if (action.type === 'SEND_KEY') {
+                    addLog(this.pid, `Sending keystroke '${action.key}' to Keyboard Driver.`);
+                    this.kernel.ipc_send(this.pid, 'keyboard_driver', { type: 'KEY_PRESS', key: action.key });
+                    this.status = 'Waiting';
+                    updateStatus(this.pid, 'Waiting');
+                }
+            }
+        }
+    }
+
+    class FileSystemServer extends Process {
+        constructor(pid) {
+            super(pid);
+            // Simulate a simple in-memory file system
+            this.vfs = {
+                "user_profile.txt": "name: Alex, role: user",
+                "system_config.json": "{ 'theme': 'dark', 'version': '1.0' }",
+                "readme.md": "# Welcome!",
+            };
+            this.updateFsUI();
+        }
+
+        updateFsUI() {
+             virtualFsEl.innerHTML = Object.entries(this.vfs)
+                .map(([name, content]) => `<div><span class="text-green-500">${name}</span>: <span class="text-gray-400">${content}</span></div>`)
+                .join('');
+        }
+
+        run() {
+            if (this.mailbox.length > 0) {
+                const message = this.mailbox.shift();
+                const { from, payload } = message;
+
+                if (payload.type === 'READ') {
+                    const filename = payload.filename;
+                    addLog(this.pid, `Read request for '${filename}' from ${from}.`);
+                    const content = this.vfs[filename] || "Error: File not found.";
+                    
+                    const response = { type: 'FILE_CONTENT', filename, content };
+                    this.kernel.ipc_send(this.pid, from, response);
+                    
+                    // Also log this event via the logger service
+                    this.kernel.ipc_send(this.pid, 'logger_service', {type: 'LOG', level: 'INFO', text: `Served file ${filename} to ${from}`});
+                }
+            }
+        }
+    }
+    
+    class KeyboardDriver extends Process {
+        constructor(pid) {
+            super(pid);
+            this.lastKey = 'None';
+        }
+
+        run() {
+            if (this.mailbox.length > 0) {
+                const message = this.mailbox.shift();
+                const { from, payload } = message;
+                
+                if (payload.type === 'KEY_PRESS') {
+                    this.lastKey = payload.key;
+                    getEl('last-key').textContent = this.lastKey;
+                    addLog(this.pid, `Processed key '${this.lastKey}' from ${from}.`);
+                    
+                    // Acknowledge the app
+                    const response = { type: 'KEY_ACK', key: this.lastKey };
+                    this.kernel.ipc_send(this.pid, from, response);
+
+                    // Also log this event via the logger service
+                    this.kernel.ipc_send(this.pid, 'logger_service', {type: 'LOG', level: 'INFO', text: `Key pressed: ${this.lastKey}`});
+                }
+            }
+        }
+    }
+
+    class LoggerService extends Process {
+        constructor(pid) {
+            super(pid);
+        }
+
+        run() {
+             if (this.mailbox.length > 0) {
+                const message = this.mailbox.shift();
+                const { from, payload } = message;
+                if(payload.type === 'LOG') {
+                    addLog(this.pid, `[${payload.level} from ${from}]: ${payload.text}`);
+                }
+             }
+        }
+    }
+
+    // --- INITIALIZATION ---
+    function initializeSimulation() {
+        kernel = new Microkernel();
+
+        const appProcess = new AppProcess('app_process');
+        const fsServer = new FileSystemServer('fs_server');
+        const keyboardDriver = new KeyboardDriver('keyboard_driver');
+        const loggerService = new LoggerService('logger_service');
+
+        kernel.registerProcess(appProcess);
+        kernel.registerProcess(fsServer);
+        kernel.registerProcess(keyboardDriver);
+        kernel.registerProcess(loggerService);
+
+        // Setup UI event listeners
+        readFileBtn.onclick = () => {
+            if (!kernel || !kernel.isRunning) return;
+            appProcess.requestReadFile(filenameInput.value);
+        };
+        sendKeyBtn.onclick = () => {
+            if (!kernel || !kernel.isRunning) return;
+            appProcess.requestSendKey(keyInput.value);
+        };
+    }
+
+
+    startBtn.addEventListener('click', () => {
+        if (simulationInterval) {
+            // Stop simulation
+            clearInterval(simulationInterval);
+            simulationInterval = null;
+            kernel.isRunning = false;
+            startBtn.textContent = 'Start Simulation';
+            startBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+            startBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+            statusSpan.textContent = 'Status: Stopped';
+        } else {
+            // Start simulation
+            initializeSimulation();
+            kernel.isRunning = true;
+            simulationInterval = setInterval(() => kernel.simulationLoop(), SIMULATION_SPEED);
+            startBtn.textContent = 'Stop Simulation';
+            startBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+            startBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+            statusSpan.textContent = 'Status: Running';
+        }
+    });
+
+});
+</script>
+</body>
+</html>
